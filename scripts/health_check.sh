@@ -1,6 +1,5 @@
 check_cpu() {
   os="$(uname -s)"
-
   if [ "$os" = "Darwin" ]; then
     # macOS: "CPU usage: 3.29% user, 5.13% sys, 91.56% idle"
     idle=$(top -l 1 | awk -F'[:, ]+' '/CPU usage/ {for(i=1;i<=NF;i++) if($i=="idle") print $(i-1)}')
@@ -10,7 +9,7 @@ check_cpu() {
     idle=$(top -bn1 | awk -F',' '/Cpu\(s\)/ {for(i=1;i<=NF;i++) if($i ~ /id/) {gsub(/[^0-9.]/,"",$i); print $i}}')
     usage=$(awk -v idle="$idle" 'BEGIN {printf "%.2f", 100 - idle}')
   fi
-
+  cpu_usage="$usage"
   if awk -v u="$usage" 'BEGIN{ exit !(u>85) }'; then
     echo "CPU: ${usage}%  Critical"
     return 2
@@ -41,7 +40,7 @@ check_mem() {
     used=$((mem_total - mem_avail))
     usage=$(awk -v u="$used" -v t="$mem_total" 'BEGIN{ printf "%.2f", (u/t)*100 }')
   fi
-
+  mem_usage="$usage"
   if awk -v u="$usage" 'BEGIN{ exit !(u>90) }'; then
     echo "Memory: ${usage}%  Critical"
     return 2
@@ -61,9 +60,10 @@ check_disk() {
     used=$(df -P / | awk 'END{gsub("%","",$5); print $5}')
   else
     echo "Disk: N/A"
+    disk_usage="N/A"
     return 0
   fi
-
+  disk_usage="$used"
   if awk -v u="$used" 'BEGIN{ exit !(u>80) }'; then
     echo "Disk: ${used}%  Warning"
     return 1
@@ -71,6 +71,7 @@ check_disk() {
     echo "Disk: ${used}%  OK"
     return 0
   fi
+
 }
 
 main() {
@@ -84,6 +85,15 @@ main() {
   check_cpu;  cpu_s=$?
   check_mem;  mem_s=$?
   check_disk; disk_s=$?
+
+  if [ "$1" = "--json" ]; then
+    echo "{"
+    echo "  \"cpu_usage\": \"${cpu_usage}%\","
+    echo "  \"mem_usage\": \"${mem_usage}%\","
+    echo "  \"disk_usage\": \"${disk_usage}%\""
+    echo "}"
+    exit 0
+  fi
 
   if $explain_mode; then
     [ $cpu_s  -eq 2 ] && echo "⚠ CPU 使用率过高，可能影响性能。"
